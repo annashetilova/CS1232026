@@ -14,7 +14,7 @@
 /* 1. Копія рядка у верхньому регістрі. */
 static char *dup_upper(const char *s)
 {
-    char *r = malloc(strlen(s));
+    char *r = malloc(strlen(s) + 1);   /* FIX 1: було без +1 — не вистачало місця для '\0' */
     if (r == NULL)
         return NULL;
     strcpy(r, s);
@@ -46,8 +46,12 @@ static void scenario2(void)
     int sum = 0;
     for (struct node *p = head; p; p = p->next)
         sum += p->value;
-    for (struct node *p = head; p; p = p->next)
+    /* FIX 2: p->next читався після free(p) — use-after-free; беремо next ДО free */
+    for (struct node *p = head; p; ) {
+        struct node *next = p->next;
         free(p);
+        p = next;
+    }
     printf("sum = %d\n", sum);
 }
 
@@ -57,7 +61,7 @@ static void scenario2(void)
 static void scenario3(void)
 {
     const char *words[] = { "a", "system", "software", "is", "wordfreq" };
-    int hist[MAXLEN] = { 0 };
+    int hist[MAXLEN + 1] = { 0 };   /* FIX 3: len може дорівнювати MAXLEN, тож індекс MAXLEN потребує MAXLEN+1 елементів */
     int canary = 12345;
     for (size_t i = 0; i < sizeof words / sizeof words[0]; i++) {
         size_t len = strlen(words[i]);
@@ -74,7 +78,7 @@ static void scenario3(void)
 static void scenario4(int argc)
 {
     const char *words[] = { "kernel", "module", "driver" };
-    int total;
+    int total = 0;                  /* FIX 4: лічильник не був ініціалізований */
     for (int i = 0; i < 3; i++)
         total += (int)strlen(words[i]);
     if (argc > 100)             /* argc тут лише для того, щоб компілятор
@@ -92,9 +96,9 @@ static void scenario4(int argc)
 static void scenario5(void)
 {
     const char *s = "the quick brown fox jumps over the lazy dog";
-    int h = 0;
+    unsigned h = 0;                 /* FIX 5: переповнення знакового int — UB; для unsigned обертання визначене */
     for (const char *p = s; *p; p++)
-        h = h * 31 + *p;
+        h = h * 31u + (unsigned char)*p;
     unsigned idx = (unsigned)h % NBUCKETS;
     printf("bucket = %u\n", idx);
 }
@@ -113,6 +117,7 @@ static void scenario6(void)
     for (int i = 0; i < 3; i++) {
         char *line = make_line("kernel", i);
         printf("%s\n", line);
+        free(line);                 /* FIX 6: рядок не звільнявся — витік 64 байти за ітерацію */
     }
 }
 
