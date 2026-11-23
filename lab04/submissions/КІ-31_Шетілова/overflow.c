@@ -1,20 +1,22 @@
-/* overflow.c — «захист» від переповнення, який компілятор має право видалити.
- *
- *   ./overflow-gcc-O0 2147483647 1
- *
- * Зберіть чотири варіанти (gcc і clang, -O0 і -O2) і порівняйте вивід.
- */
+/* overflow.c — перевірка переповнення БЕЗ невизначеної поведінки. */
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-/* Додає a і b. Повертає -1, якщо сума не вміщується в int. */
+/* Спосіб 1: перевірити ДО додавання. Переповнення int — UB, тому
+ * порівнюємо з межею, не виконуючи самого додавання. */
 static int add_checked(int a, int b, int *out)
 {
-    int s = a + b;
-    if (b > 0 && s < a)         /* «якщо додали додатне, а стало менше» */
+    if ((b > 0 && a > INT_MAX - b) || (b < 0 && a < INT_MIN - b))
         return -1;
-    *out = s;
+    *out = a + b;
     return 0;
+}
+
+/* Спосіб 2: вбудована функція компілятора, яка повідомляє про переповнення. */
+static int add_checked_builtin(int a, int b, int *out)
+{
+    return __builtin_add_overflow(a, b, out) ? -1 : 0;
 }
 
 int main(int argc, char *argv[])
@@ -23,8 +25,11 @@ int main(int argc, char *argv[])
         fprintf(stderr, "usage: overflow A B\n");
         return 2;
     }
-    int r;
-    if (add_checked(atoi(argv[1]), atoi(argv[2]), &r) != 0)
+    int a = atoi(argv[1]), b = atoi(argv[2]);
+    int r, r2;
+    int e1 = add_checked(a, b, &r);
+    int e2 = add_checked_builtin(a, b, &r2);
+    if (e1 != 0 || e2 != 0)
         puts("overflow detected");
     else
         printf("sum = %d\n", r);
